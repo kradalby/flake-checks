@@ -25,7 +25,8 @@ let
     , version ? "0.0.0"
     , vendorHash
     , goPkg ? pkgs.go
-    , embedDirs ? [ ]
+    , embedDirs ? [ ] # extra //go:embed dirs, e.g. [ (root + "/static") ]
+    , extraSrc ? [ ] # extra files/dirs tests read, e.g. [ (root + "/fixture.json") ]
     , ...
     }:
     let
@@ -44,7 +45,7 @@ let
             (fs.maybeMissing (root + "/.golangci.yml"))
             (fs.maybeMissing (root + "/.golangci.yaml"))
             (fs.maybeMissing (root + "/.golangci.toml"))
-          ] ++ map fs.maybeMissing embedDirs))
+          ] ++ map fs.maybeMissing (embedDirs ++ extraSrc)))
           (fs.maybeMissing (root + "/vendor"));
       };
       pkg = (pkgs.buildGoModule.override { go = goPkg; }) {
