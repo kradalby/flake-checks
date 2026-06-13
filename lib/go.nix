@@ -33,12 +33,19 @@ let
       fs = lib.fileset;
       goSrc = fs.toSource {
         inherit root;
-        fileset = fs.unions ([
-          (root + "/go.mod")
-          (fs.maybeMissing (root + "/go.sum"))
-          (fs.fileFilter (f: f.hasExt "go") root)
-          (fs.maybeMissing (root + "/testdata"))
-        ] ++ map fs.maybeMissing embedDirs);
+        # Whitelist Go inputs (incl. the repo's lint config so golangci-lint uses
+        # it), minus any committed vendor/ tree (the checks vendor via goModules).
+        fileset = fs.difference
+          (fs.unions ([
+            (root + "/go.mod")
+            (fs.maybeMissing (root + "/go.sum"))
+            (fs.fileFilter (f: f.hasExt "go") root)
+            (fs.maybeMissing (root + "/testdata"))
+            (fs.maybeMissing (root + "/.golangci.yml"))
+            (fs.maybeMissing (root + "/.golangci.yaml"))
+            (fs.maybeMissing (root + "/.golangci.toml"))
+          ] ++ map fs.maybeMissing embedDirs))
+          (fs.maybeMissing (root + "/vendor"));
       };
       pkg = (pkgs.buildGoModule.override { go = goPkg; }) {
         inherit pname version vendorHash;
