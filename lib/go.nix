@@ -77,8 +77,10 @@ in
 {
   goBuild = args: (mkCtx args).pkg;
 
+  # nativeCheckInputs: extra tools on PATH during the test (e.g. softhsm, a db).
+  # testEnv: extra shell run before `go test` (export integration env, etc.).
   goTest =
-    { goSkip ? [ ], goRace ? false, ... }@args:
+    { goSkip ? [ ], goRace ? false, nativeCheckInputs ? [ ], testEnv ? "", ... }@args:
     let
       c = mkCtx args;
       raceFlag = c.lib.optionalString goRace "-race";
@@ -87,9 +89,10 @@ in
     c.pkgs.stdenv.mkDerivation {
       name = "${c.pname}-gotest";
       src = c.goSrc;
-      nativeBuildInputs = [ c.goPkg ];
+      nativeBuildInputs = [ c.goPkg ] ++ nativeCheckInputs;
       buildPhase = ''
         ${c.goEnv}
+        ${testEnv}
         go test ${raceFlag} ${skipFlag} ./...
       '';
       installPhase = "touch $out";
