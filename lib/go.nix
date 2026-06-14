@@ -73,11 +73,14 @@ let
     in
     { inherit pkgs lib goSrc pkg goEnv pname goPkg; };
 
-  treefmtFor = pkgs: treefmt-nix.lib.evalModule pkgs {
+  # goFmt picks the Go formatter: "gofumpt" (default), "gofmt", or "off"
+  # (nix-only; let golangci-lint enforce Go formatting).
+  treefmtFor = pkgs: goFmt: treefmt-nix.lib.evalModule pkgs {
     projectRootFile = "go.mod";
     programs = {
-      gofumpt.enable = true;
-      goimports.enable = true;
+      gofumpt.enable = goFmt == "gofumpt";
+      gofmt.enable = goFmt == "gofmt";
+      goimports.enable = goFmt != "off";
       nixpkgs-fmt.enable = true;
     };
   };
@@ -126,7 +129,7 @@ in
 
   # fmtExclude: dirs/files to skip (generated code, vendored deploy configs, …).
   goFormat =
-    { pkgs, root, fmtExclude ? [ ], ... }:
+    { pkgs, root, fmtExclude ? [ ], goFmt ? "gofumpt", ... }:
     let
       fs = pkgs.lib.fileset;
       base = fs.unions [
@@ -140,7 +143,7 @@ in
         else fs.difference base (fs.unions (map fs.maybeMissing fmtExclude));
       fmtSrc = fs.toSource { inherit root; inherit fileset; };
     in
-    (treefmtFor pkgs).config.build.check fmtSrc;
+    (treefmtFor pkgs goFmt).config.build.check fmtSrc;
 
-  formatter = { pkgs, ... }: (treefmtFor pkgs).config.build.wrapper;
+  formatter = { pkgs, goFmt ? "gofumpt", ... }: (treefmtFor pkgs goFmt).config.build.wrapper;
 }
