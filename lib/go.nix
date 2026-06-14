@@ -115,18 +115,21 @@ in
       installPhase = "touch $out";
     };
 
+  # fmtExclude: dirs/files to skip (generated code, vendored deploy configs, …).
   goFormat =
-    { pkgs, root, ... }:
+    { pkgs, root, fmtExclude ? [ ], ... }:
     let
       fs = pkgs.lib.fileset;
-      fmtSrc = fs.toSource {
-        inherit root;
-        fileset = fs.unions [
-          (root + "/go.mod")
-          (fs.fileFilter (f: f.hasExt "go") root)
-          (fs.fileFilter (f: f.hasExt "nix") root)
-        ];
-      };
+      base = fs.unions [
+        (root + "/go.mod")
+        (fs.fileFilter (f: f.hasExt "go") root)
+        (fs.fileFilter (f: f.hasExt "nix") root)
+      ];
+      fileset =
+        if fmtExclude == [ ]
+        then base
+        else fs.difference base (fs.unions (map fs.maybeMissing fmtExclude));
+      fmtSrc = fs.toSource { inherit root; inherit fileset; };
     in
     (treefmtFor pkgs).config.build.check fmtSrc;
 
