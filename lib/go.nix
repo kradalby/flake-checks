@@ -92,15 +92,17 @@ in
   # testEnv: extra shell run before `go test` (export integration env, etc.).
   # testPackages: package pattern(s) to test, defaults to the whole module.
   # goTags: build tags, e.g. [ "e2e" ]. name: override the derivation name.
+  # testFlags: extra `go test` flags, e.g. [ "-timeout=60m" ].
   goTest =
     { goSkip ? [ ], goRace ? false, nativeCheckInputs ? [ ], testEnv ? ""
-    , testPackages ? "./...", goTags ? [ ], name ? null, ...
+    , testPackages ? "./...", goTags ? [ ], testFlags ? [ ], name ? null, ...
     }@args:
     let
       c = mkCtx args;
       raceFlag = c.lib.optionalString goRace "-race";
       tagsFlag = c.lib.optionalString (goTags != [ ]) "-tags=${c.lib.concatStringsSep "," goTags}";
       skipFlag = c.lib.optionalString (goSkip != [ ]) "-skip '${c.lib.concatStringsSep "|" goSkip}'";
+      flagsStr = c.lib.concatStringsSep " " testFlags;
     in
     c.pkgs.stdenv.mkDerivation {
       name = if name != null then name else "${c.pname}-gotest";
@@ -109,7 +111,7 @@ in
       buildPhase = ''
         ${c.goEnv}
         ${testEnv}
-        go test ${raceFlag} ${tagsFlag} ${skipFlag} ${testPackages}
+        go test ${raceFlag} ${tagsFlag} ${flagsStr} ${skipFlag} ${testPackages}
       '';
       installPhase = "touch $out";
     };
