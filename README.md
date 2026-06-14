@@ -52,8 +52,13 @@ your flake's `checks` so `nix build .#checks.<system>.<name>` is the CI gate.
 | `formatter common` | `nix fmt` wrapper | the flake's `formatter` output |
 
 `common` keys: `pkgs`, `root`, `pname`, `vendorHash` (required); `version`, `goPkg`,
-`embedDirs` (extra `//go:embed` dirs), `goSkip`, `goRace` (optional). Each function
-takes `...` and ignores keys it doesn't use, so one `common` set drives them all.
+`embedDirs` (extra `//go:embed` dirs), `extraSrc`, `excludeSrc`, `goSkip`, `goRace`,
+`goTags`, `proxyVendor` (optional). Each function takes `...` and ignores keys it
+doesn't use, so one `common` set drives them all.
+
+`proxyVendor = true` fetches deps via the module proxy (`go mod download`) instead
+of `go mod vendor`, so build-tag-only deps (e.g. a `//go:build e2e` import) resolve
+offline. It yields a different `vendorHash` than vendor mode — give that lane its own.
 
 Each check's `src` is `lib.fileset`-filtered to only its inputs, so unrelated edits
 (docs, CI, other lockfile inputs) hit the binary cache instead of rebuilding.

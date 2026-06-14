@@ -31,6 +31,9 @@ let
     , subPackages ? null # buildGoModule subPackages, e.g. [ "cmd/app" ]
     , ldflags ? [ ] # buildGoModule ldflags
     , env ? { } # buildGoModule env, e.g. { CGO_ENABLED = "0"; }
+    , proxyVendor ? false # fetch via `go mod download` (module proxy) instead
+      # of `go mod vendor`; needed when deps live only behind a build tag
+      # (e.g. //go:build e2e), which `go mod vendor` drops.
     , ...
     }:
     let
@@ -53,7 +56,7 @@ let
           (fs.unions (map fs.maybeMissing ([ (root + "/vendor") ] ++ excludeSrc)));
       };
       pkg = (pkgs.buildGoModule.override { go = goPkg; }) ({
-        inherit pname version vendorHash;
+        inherit pname version vendorHash proxyVendor;
         src = goSrc;
         doCheck = false;
         inherit ldflags;
@@ -66,6 +69,12 @@ let
       '' + (if vendorHash == null then ''
         export GOFLAGS=-mod=mod
         export GOPROXY=off
+      '' else if proxyVendor then ''
+        # goModules is the module download cache (proxy layout); serve it as a
+        # file:// GOPROXY so tag-only deps resolve offline under -mod=mod.
+        export GOFLAGS=-mod=mod
+        export GOPROXY=file://${pkg.goModules}
+        export GOSUMDB=off
       '' else ''
         export GOFLAGS=-mod=vendor
         ln -s ${pkg.goModules} vendor
