@@ -91,23 +91,25 @@ in
   # nativeCheckInputs: extra tools on PATH during the test (e.g. softhsm, a db).
   # testEnv: extra shell run before `go test` (export integration env, etc.).
   # testPackages: package pattern(s) to test, defaults to the whole module.
+  # goTags: build tags, e.g. [ "e2e" ]. name: override the derivation name.
   goTest =
     { goSkip ? [ ], goRace ? false, nativeCheckInputs ? [ ], testEnv ? ""
-    , testPackages ? "./...", ...
+    , testPackages ? "./...", goTags ? [ ], name ? null, ...
     }@args:
     let
       c = mkCtx args;
       raceFlag = c.lib.optionalString goRace "-race";
+      tagsFlag = c.lib.optionalString (goTags != [ ]) "-tags=${c.lib.concatStringsSep "," goTags}";
       skipFlag = c.lib.optionalString (goSkip != [ ]) "-skip '${c.lib.concatStringsSep "|" goSkip}'";
     in
     c.pkgs.stdenv.mkDerivation {
-      name = "${c.pname}-gotest";
+      name = if name != null then name else "${c.pname}-gotest";
       src = c.goSrc;
       nativeBuildInputs = [ c.goPkg ] ++ nativeCheckInputs;
       buildPhase = ''
         ${c.goEnv}
         ${testEnv}
-        go test ${raceFlag} ${skipFlag} ${testPackages}
+        go test ${raceFlag} ${tagsFlag} ${skipFlag} ${testPackages}
       '';
       installPhase = "touch $out";
     };
