@@ -87,8 +87,11 @@ in
 
   # nativeCheckInputs: extra tools on PATH during the test (e.g. softhsm, a db).
   # testEnv: extra shell run before `go test` (export integration env, etc.).
+  # testPackages: package pattern(s) to test, defaults to the whole module.
   goTest =
-    { goSkip ? [ ], goRace ? false, nativeCheckInputs ? [ ], testEnv ? "", ... }@args:
+    { goSkip ? [ ], goRace ? false, nativeCheckInputs ? [ ], testEnv ? ""
+    , testPackages ? "./...", ...
+    }@args:
     let
       c = mkCtx args;
       raceFlag = c.lib.optionalString goRace "-race";
@@ -101,7 +104,7 @@ in
       buildPhase = ''
         ${c.goEnv}
         ${testEnv}
-        go test ${raceFlag} ${skipFlag} ./...
+        go test ${raceFlag} ${skipFlag} ${testPackages}
       '';
       installPhase = "touch $out";
     };
