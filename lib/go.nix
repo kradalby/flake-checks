@@ -28,6 +28,9 @@ let
     , embedDirs ? [ ] # extra //go:embed dirs, e.g. [ (root + "/static") ]
     , extraSrc ? [ ] # extra files/dirs tests read, e.g. [ (root + "/fixture.json") ]
     , excludeSrc ? [ ] # dirs to drop, e.g. a nested module [ (root + "/provider") ]
+    , subPackages ? null # buildGoModule subPackages, e.g. [ "cmd/app" ]
+    , ldflags ? [ ] # buildGoModule ldflags
+    , env ? { } # buildGoModule env, e.g. { CGO_ENABLED = "0"; }
     , ...
     }:
     let
@@ -49,11 +52,14 @@ let
           ] ++ map fs.maybeMissing (embedDirs ++ extraSrc)))
           (fs.unions (map fs.maybeMissing ([ (root + "/vendor") ] ++ excludeSrc)));
       };
-      pkg = (pkgs.buildGoModule.override { go = goPkg; }) {
+      pkg = (pkgs.buildGoModule.override { go = goPkg; }) ({
         inherit pname version vendorHash;
         src = goSrc;
         doCheck = false;
-      };
+        inherit ldflags;
+      }
+      // lib.optionalAttrs (subPackages != null) { inherit subPackages; }
+      // lib.optionalAttrs (env != { }) { inherit env; });
       goEnv = ''
         export HOME=$TMPDIR
         export GOCACHE=$TMPDIR/go-build
