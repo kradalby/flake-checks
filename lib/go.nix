@@ -112,13 +112,18 @@ in
       installPhase = "touch $out";
     };
 
+  # golangciLint: override the golangci-lint package (e.g. one built with a
+  # newer Go when go.mod targets a version above nixpkgs' default).
   goLint =
-    args:
-    let c = mkCtx args; in
+    { golangciLint ? null, ... }@args:
+    let
+      c = mkCtx args;
+      gcl = if golangciLint != null then golangciLint else c.pkgs.golangci-lint;
+    in
     c.pkgs.stdenv.mkDerivation {
       name = "${c.pname}-golangci-lint";
       src = c.goSrc;
-      nativeBuildInputs = [ c.goPkg c.pkgs.golangci-lint ];
+      nativeBuildInputs = [ c.goPkg gcl ];
       buildPhase = ''
         ${c.goEnv}
         export GOLANGCI_LINT_CACHE=$TMPDIR/golangci
