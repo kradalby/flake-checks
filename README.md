@@ -43,18 +43,22 @@ your flake's `checks` so `nix build .#checks.<system>.<name>` is the CI gate.
 
 ## Functions (Go)
 
-| Function | Output | Notes |
-|----------|--------|-------|
-| `goBuild common` | `buildGoModule` package | use for `packages.default` and `checks.build` |
-| `goTest common` | `go test ./...` check | `goRace = true` adds `-race` (CGO); `goSkip = [ "Pat" ]` |
-| `goLint common` | `golangci-lint run ./...` check | full tree |
-| `goFormat common` | treefmt check | gofumpt + goimports + nixpkgs-fmt |
-| `formatter common` | `nix fmt` wrapper | the flake's `formatter` output |
+| Function           | Output                          | Notes                                                                   |
+| ------------------ | ------------------------------- | ----------------------------------------------------------------------- |
+| `goBuild common`   | `buildGoModule` package         | use for `packages.default` and `checks.build`                           |
+| `goTest common`    | `go test ./...` check           | `goRace = true` adds `-race` (CGO); `goSkip = [ "Pat" ]`                |
+| `goLint common`    | `golangci-lint run ./...` check | full tree                                                               |
+| `goFormat common`  | treefmt check                   | gofumpt + goimports + nixpkgs-fmt; `prettier = true` adds web/doc files |
+| `formatter common` | `nix fmt` wrapper               | the flake's `formatter` output                                          |
 
 `common` keys: `pkgs`, `root`, `pname`, `vendorHash` (required); `version`, `goPkg`,
 `embedDirs` (extra `//go:embed` dirs), `extraSrc`, `excludeSrc`, `goSkip`, `goRace`,
-`goTags`, `proxyVendor` (optional). Each function takes `...` and ignores keys it
-doesn't use, so one `common` set drives them all.
+`goTags`, `proxyVendor`, `prettier`, `fmtExclude` (optional). Each function takes `...`
+and ignores keys it doesn't use, so one `common` set drives them all.
+
+`prettier = true` formats md/yaml/ts/js/css/scss/sass/html/json through prettier in
+addition to the Go/Nix formatters (off by default; `fmtExclude` drops paths, e.g.
+generated dirs).
 
 `proxyVendor = true` fetches deps via the module proxy (`go mod download`) instead
 of `go mod vendor`, so build-tag-only deps (e.g. a `//go:build e2e` import) resolve

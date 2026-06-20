@@ -83,16 +83,23 @@ let
     { inherit pkgs lib goSrc pkg goEnv pname goPkg; };
 
   # goFmt picks the Go formatter: "gofumpt" (default), "gofmt", or "off"
-  # (nix-only; let golangci-lint enforce Go formatting).
-  treefmtFor = pkgs: goFmt: treefmt-nix.lib.evalModule pkgs {
+  # (nix-only; let golangci-lint enforce Go formatting). prettier adds
+  # web/doc formatting (md, yaml, ts, css, …) for repos that ship those.
+  treefmtFor = pkgs: goFmt: prettier: treefmt-nix.lib.evalModule pkgs {
     projectRootFile = "go.mod";
     programs = {
       gofumpt.enable = goFmt == "gofumpt";
       gofmt.enable = goFmt == "gofmt";
       goimports.enable = goFmt != "off";
       nixpkgs-fmt.enable = true;
+      prettier.enable = prettier;
     };
   };
+
+  # Default extensions prettier owns; the goFormat fileset opts these in when
+  # enabled. Override per-repo via `prettierExts` (e.g. drop json for repos with
+  # hand-formatted json testdata).
+  defaultPrettierExts = [ "css" "html" "js" "json" "jsx" "md" "mdx" "scss" "ts" "tsx" "vue" "yaml" "yml" ];
 in
 {
   goBuild = args: (mkCtx args).pkg;
@@ -100,11 +107,22 @@ in
   # nativeCheckInputs: extra tools on PATH during the test (e.g. softhsm, a db).
   # testEnv: extra shell run before `go test` (export integration env, etc.).
   # testPackages: package pattern(s) to test, defaults to the whole module.
+  # testExclude: import-path substrings to drop from the package list (kept in
+  #   source so dependents still compile), e.g. [ "/integration" ] for a Docker
+  #   suite that can't run in the sandbox.
   # goTags: build tags, e.g. [ "e2e" ]. name: override the derivation name.
   # testFlags: extra `go test` flags, e.g. [ "-timeout=60m" ].
   goTest =
-    { goSkip ? [ ], goRace ? false, nativeCheckInputs ? [ ], testEnv ? ""
-    , testPackages ? "./...", goTags ? [ ], testFlags ? [ ], name ? null, ...
+    { goSkip ? [ ]
+    , goRace ? false
+    , nativeCheckInputs ? [ ]
+    , testEnv ? ""
+    , testPackages ? "./..."
+    , testExclude ? [ ]
+    , goTags ? [ ]
+    , testFlags ? [ ]
+    , name ? null
+    , ...
     }@args:
     let
       c = mkCtx args;
@@ -112,6 +130,12 @@ in
       tagsFlag = c.lib.optionalString (goTags != [ ]) "-tags=${c.lib.concatStringsSep "," goTags}";
       skipFlag = c.lib.optionalString (goSkip != [ ]) "-skip '${c.lib.concatStringsSep "|" goSkip}'";
       flagsStr = c.lib.concatStringsSep " " testFlags;
+      # Resolve the package set at build time so excluded packages stay in the
+      # source tree (dependents still compile) but are not themselves tested.
+      pkgList =
+        if testExclude == [ ]
+        then testPackages
+        else "$(go list ${testPackages} | grep -vE '${c.lib.concatStringsSep "|" testExclude}')";
     in
     c.pkgs.stdenv.mkDerivation {
       name = if name != null then name else "${c.pname}-gotest";
@@ -120,7 +144,7 @@ in
       buildPhase = ''
         ${c.goEnv}
         ${testEnv}
-        go test ${raceFlag} ${tagsFlag} ${flagsStr} ${skipFlag} ${testPackages}
+        go test ${raceFlag} ${tagsFlag} ${flagsStr} ${skipFlag} ${pkgList}
       '';
       installPhase = "touch $out";
     };
@@ -146,22 +170,45 @@ in
     };
 
   # fmtExclude: dirs/files to skip (generated code, vendored deploy configs, …).
+  # prettier: also format web/doc files (md, yaml, ts, css, …) via prettier.
   goFormat =
-    { pkgs, root, fmtExclude ? [ ], goFmt ? "gofumpt", ... }:
+    { pkgs
+    , root
+    , fmtExclude ? [ ]
+    , goFmt ? "gofumpt"
+    , prettier ? false
+    , prettierExts ? defaultPrettierExts
+    , ...
+    }:
     let
-      fs = pkgs.lib.fileset;
-      base = fs.unions [
+      lib = pkgs.lib;
+      fs = lib.fileset;
+      # Prettier reads .editorconfig / .prettierrc for print width etc., so the
+      # config must be in the source tree or the check disagrees with local runs.
+      prettierConfig = map (f: fs.maybeMissing (root + "/${f}")) [
+        ".editorconfig"
+        ".prettierrc"
+        ".prettierrc.json"
+        ".prettierrc.yaml"
+        ".prettierrc.yml"
+        ".prettierrc.toml"
+        ".prettierrc.js"
+        "prettier.config.js"
+      ];
+      base = fs.unions ([
         (root + "/go.mod")
         (fs.fileFilter (f: f.hasExt "go") root)
         (fs.fileFilter (f: f.hasExt "nix") root)
-      ];
+      ] ++ lib.optionals prettier
+        ([ (fs.fileFilter (f: lib.any f.hasExt prettierExts) root) ] ++ prettierConfig));
       fileset =
         if fmtExclude == [ ]
         then base
         else fs.difference base (fs.unions (map fs.maybeMissing fmtExclude));
       fmtSrc = fs.toSource { inherit root; inherit fileset; };
     in
-    (treefmtFor pkgs goFmt).config.build.check fmtSrc;
+    (treefmtFor pkgs goFmt prettier).config.build.check fmtSrc;
 
-  formatter = { pkgs, goFmt ? "gofumpt", ... }: (treefmtFor pkgs goFmt).config.build.wrapper;
+  formatter = { pkgs, goFmt ? "gofumpt", prettier ? false, ... }:
+    (treefmtFor pkgs goFmt prettier).config.build.wrapper;
 }

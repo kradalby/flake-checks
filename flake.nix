@@ -28,6 +28,7 @@
           root = ./examples/minimal;
           pname = "example";
           vendorHash = null;
+          prettier = true; # dogfood web/doc formatting (examples/minimal/README.md)
         };
       in
       {
