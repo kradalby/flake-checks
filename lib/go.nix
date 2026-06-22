@@ -82,10 +82,20 @@ let
     in
     { inherit pkgs lib goSrc pkg goEnv pname goPkg; };
 
+  # Read the module path from a repo's go.mod (the `module <path>` line), used
+  # as goimports' `-local` prefix so the repo's own packages group last.
+  goModuleOf = pkgs: root:
+    let
+      ml = pkgs.lib.findFirst (l: pkgs.lib.hasPrefix "module " l) null
+        (pkgs.lib.splitString "\n" (builtins.readFile (root + "/go.mod")));
+    in
+    if ml == null then null else pkgs.lib.elemAt (pkgs.lib.splitString " " ml) 1;
+
   # goFmt picks the Go formatter: "gofumpt" (default), "gofmt", or "off"
   # (nix-only; let golangci-lint enforce Go formatting). prettier adds
   # web/doc formatting (md, yaml, ts, css, …) for repos that ship those.
-  treefmtFor = pkgs: goFmt: prettier: treefmt-nix.lib.evalModule pkgs {
+  # localPrefix (the go module path) makes goimports group local imports last.
+  treefmtFor = pkgs: goFmt: prettier: localPrefix: treefmt-nix.lib.evalModule pkgs {
     projectRootFile = "go.mod";
     programs = {
       gofumpt.enable = goFmt == "gofumpt";
@@ -93,6 +103,9 @@ let
       goimports.enable = goFmt != "off";
       nixpkgs-fmt.enable = true;
       prettier.enable = prettier;
+    };
+    settings.formatter = pkgs.lib.optionalAttrs (goFmt != "off" && localPrefix != null) {
+      goimports.options = [ "-w" "-local" localPrefix ];
     };
   };
 
@@ -178,6 +191,7 @@ in
     , goFmt ? "gofumpt"
     , prettier ? false
     , prettierExts ? defaultPrettierExts
+    , goImportsLocal ? goModuleOf pkgs root
     , ...
     }:
     let
@@ -207,8 +221,8 @@ in
         else fs.difference base (fs.unions (map fs.maybeMissing fmtExclude));
       fmtSrc = fs.toSource { inherit root; inherit fileset; };
     in
-    (treefmtFor pkgs goFmt prettier).config.build.check fmtSrc;
+    (treefmtFor pkgs goFmt prettier goImportsLocal).config.build.check fmtSrc;
 
-  formatter = { pkgs, goFmt ? "gofumpt", prettier ? false, ... }:
-    (treefmtFor pkgs goFmt prettier).config.build.wrapper;
+  formatter = { pkgs, root, goFmt ? "gofumpt", prettier ? false, goImportsLocal ? goModuleOf pkgs root, ... }:
+    (treefmtFor pkgs goFmt prettier goImportsLocal).config.build.wrapper;
 }
