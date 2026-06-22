@@ -1,0 +1,25 @@
+repos:
+  - repo: https://github.com/pre-commit/pre-commit-hooks
+    rev: v5.0.0
+    hooks:
+      - id: trailing-whitespace
+      - id: end-of-file-fixer
+      - id: check-yaml
+      - id: check-json
+      - id: check-toml
+      - id: check-merge-conflict
+      - id: check-added-large-files
+        args: ["--maxkb=1000"]
+      - id: detect-private-key
+      - id: mixed-line-ending
+
+  - repo: local
+    hooks:
+      # This repo formats via treefmt-nix (fc.formatter), not a treefmt.toml, so
+      # format + lint + build are enforced through its own dogfooded checks.
+      - id: nix-build-checks
+        name: nix build checks (build, golangci-lint, formatting)
+        entry: bash -c 'nix build --fallback .#checks.x86_64-linux.build .#checks.x86_64-linux.golangci-lint .#checks.x86_64-linux.formatting'
+        language: system
+        pass_filenames: false
+        files: ^(flake\.(nix|lock)|lib/.*\.nix|examples/minimal/(go\.(mod|sum)|.*\.go))$
