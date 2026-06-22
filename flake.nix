@@ -28,12 +28,16 @@
           root = ./examples/minimal;
           pname = "example";
           vendorHash = null;
+          goPkg = pkgs.go_1_26; # pin latest Go, also dogfoods the goPkg knob
           prettier = true; # dogfood web/doc formatting (examples/minimal/README.md)
         };
       in
       {
         packages.default = fc.goBuild common;
         formatter = fc.formatter common;
+        devShells.default = pkgs.mkShell {
+          packages = [ pkgs.go_1_26 pkgs.gopls pkgs.golangci-lint pkgs.gofumpt pkgs.prek pkgs.gnumake ];
+        };
         checks = {
           build = fc.goBuild common;
           gotest = fc.goTest common;
