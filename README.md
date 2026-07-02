@@ -72,4 +72,7 @@ of `go mod vendor`, so build-tag-only deps (e.g. a `//go:build e2e` import) reso
 offline. It yields a different `vendorHash` than vendor mode — give that lane its own.
 
 Each check's `src` is `lib.fileset`-filtered to only its inputs, so unrelated edits
-(docs, CI, other lockfile inputs) hit the binary cache instead of rebuilding.
+(docs, CI, other lockfile inputs) hit the binary cache instead of rebuilding. Every
+directory named `testdata` (the `go test` convention) is included automatically,
+anywhere in the tree; only `//go:embed` targets and unconventional fixtures need
+`embedDirs`/`extraSrc`.

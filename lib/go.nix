@@ -45,6 +45,18 @@ let
     let
       lib = pkgs.lib;
       fs = lib.fileset;
+      # Every directory named "testdata" anywhere under root — the `go test`
+      # convention — so fixtures never need per-repo listing in extraSrc.
+      # vendor/, node_modules/ and .git/ are pruned from the walk.
+      testdataDirs = dir:
+        lib.concatLists (lib.mapAttrsToList
+          (n: t:
+            if t != "directory" || n == "vendor" || n == "node_modules" || n == ".git"
+            then [ ]
+            else if n == "testdata"
+            then [ (dir + "/${n}") ]
+            else testdataDirs (dir + "/${n}"))
+          (builtins.readDir dir));
       goSrc = fs.toSource {
         inherit root;
         # Whitelist Go inputs (incl. the repo's lint config so golangci-lint uses
@@ -54,11 +66,10 @@ let
             (root + "/go.mod")
             (fs.maybeMissing (root + "/go.sum"))
             (fs.fileFilter (f: f.hasExt "go") root)
-            (fs.maybeMissing (root + "/testdata"))
             (fs.maybeMissing (root + "/.golangci.yml"))
             (fs.maybeMissing (root + "/.golangci.yaml"))
             (fs.maybeMissing (root + "/.golangci.toml"))
-          ] ++ map fs.maybeMissing (embedDirs ++ extraSrc)))
+          ] ++ testdataDirs root ++ map fs.maybeMissing (embedDirs ++ extraSrc)))
           (fs.unions (map fs.maybeMissing ([ (root + "/vendor") ] ++ excludeSrc)));
       };
       pkg = (pkgs.buildGoModule.override { go = goPkg; }) ({
