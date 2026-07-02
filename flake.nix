@@ -42,6 +42,7 @@
           build = fc.goBuild common;
           gotest = fc.goTest common;
           golangci-lint = fc.goLint common;
+          generate = fc.goGenerate common;
           formatting = fc.goFormat common;
         };
       }
