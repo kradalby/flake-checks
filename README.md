@@ -43,18 +43,25 @@ your flake's `checks` so `nix build .#checks.<system>.<name>` is the CI gate.
 
 ## Functions (Go)
 
-| Function           | Output                          | Notes                                                                   |
-| ------------------ | ------------------------------- | ----------------------------------------------------------------------- |
-| `goBuild common`   | `buildGoModule` package         | use for `packages.default` and `checks.build`                           |
-| `goTest common`    | `go test ./...` check           | `goRace = true` adds `-race` (CGO); `goSkip = [ "Pat" ]`                |
-| `goLint common`    | `golangci-lint run ./...` check | full tree                                                               |
-| `goFormat common`  | treefmt check                   | gofumpt + goimports + nixpkgs-fmt; `prettier = true` adds web/doc files |
-| `formatter common` | `nix fmt` wrapper               | the flake's `formatter` output                                          |
+| Function             | Output                          | Notes                                                                   |
+| -------------------- | ------------------------------- | ----------------------------------------------------------------------- |
+| `goBuild common`     | `buildGoModule` package         | use for `packages.default` and `checks.build`                           |
+| `goTest common`      | `go test ./...` check           | `goRace = true` adds `-race` (CGO); `goSkip = [ "Pat" ]`; `testWrapper = "xvfb-run"`; `retries = 3` for flaky suites |
+| `goLint common`      | `golangci-lint run ./...` check | full tree                                                               |
+| `goGenerate common`  | `go generate` drift check       | regenerates in the sandbox, fails on diff; `generateCommand`, `preGen`/`postGen` |
+| `goFormat common`    | treefmt check                   | gofumpt + goimports + nixpkgs-fmt; `prettier = true` adds web/doc files |
+| `formatter common`   | `nix fmt` wrapper               | the flake's `formatter` output                                          |
 
 `common` keys: `pkgs`, `root`, `pname`, `vendorHash` (required); `version`, `goPkg`,
 `embedDirs` (extra `//go:embed` dirs), `extraSrc`, `excludeSrc`, `goSkip`, `goRace`,
-`goTags`, `proxyVendor`, `prettier`, `fmtExclude` (optional). Each function takes `...`
-and ignores keys it doesn't use, so one `common` set drives them all.
+`goTags`, `proxyVendor`, `goCache`, `prettier`, `fmtExclude` (optional). Each function
+takes `...` and ignores keys it doesn't use, so one `common` set drives them all.
+
+`goCache` accepts a derivation whose setup hook seeds `$TMPDIR/go-cache` with
+precompiled dependencies (e.g. [numtide/build-go-cache](https://github.com/numtide/build-go-cache));
+it is wired into the build and every check. Go's cache keys include build flags, so
+the cache must be built with the same `-trimpath`/`-race`/CGO configuration as its
+consumer or every lookup misses.
 
 `prettier = true` formats md/yaml/ts/js/css/scss/sass/html/json through prettier in
 addition to the Go/Nix formatters (off by default; `fmtExclude` drops paths, e.g.

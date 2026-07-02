@@ -1,10 +1,11 @@
 # Cache-friendly Go flake checks, one function per check.
 #
-#   lib.goBuild   common   → packages.default / checks.build
-#   lib.goTest    common   → checks.gotest        (+ goRace / goSkip)
-#   lib.goLint    common   → checks.golangci-lint
-#   lib.goFormat  common   → checks.formatting    (treefmt)
-#   lib.formatter common   → formatter            (`nix fmt`)
+#   lib.goBuild    common   → packages.default / checks.build
+#   lib.goTest     common   → checks.gotest        (+ goRace / goSkip)
+#   lib.goLint     common   → checks.golangci-lint
+#   lib.goGenerate common   → checks.generate      (go generate drift)
+#   lib.goFormat   common   → checks.formatting    (treefmt)
+#   lib.formatter  common   → formatter            (`nix fmt`)
 #
 # `common` is one attrset shared across the calls; each function takes `...`
 # and ignores keys it doesn't use:
@@ -34,6 +35,11 @@ let
     , proxyVendor ? false # fetch via `go mod download` (module proxy) instead
       # of `go mod vendor`; needed when deps live only behind a build tag
       # (e.g. //go:build e2e), which `go mod vendor` drops.
+    , goCache ? null # a derivation whose setup hook seeds $TMPDIR/go-cache with
+      # precompiled deps (e.g. numtide/build-go-cache); wired into the build and
+      # every check so dep compilation is amortized across derivations. The
+      # cache must be built with the same flags (-trimpath/-race/CGO) as its
+      # consumer or Go's cache keys miss entirely.
     , ...
     }:
     let
@@ -62,10 +68,13 @@ let
         inherit ldflags;
       }
       // lib.optionalAttrs (subPackages != null) { inherit subPackages; }
-      // lib.optionalAttrs (env != { }) { inherit env; });
+      // lib.optionalAttrs (env != { }) { inherit env; }
+      // lib.optionalAttrs (goCache != null) { nativeBuildInputs = [ goCache ]; });
+      # $TMPDIR/go-cache matches nixpkgs' buildGoModule and build-go-cache's
+      # setup hook, so a goCache seed lands where go actually looks.
       goEnv = ''
         export HOME=$TMPDIR
-        export GOCACHE=$TMPDIR/go-build
+        export GOCACHE=$TMPDIR/go-cache
       '' + (if vendorHash == null then ''
         export GOFLAGS=-mod=mod
         export GOPROXY=off
@@ -80,7 +89,7 @@ let
         ln -s ${pkg.goModules} vendor
       '');
     in
-    { inherit pkgs lib goSrc pkg goEnv pname goPkg; };
+    { inherit pkgs lib goSrc pkg goEnv pname goPkg goCache; };
 
   # Read the module path from a repo's go.mod (the `module <path>` line), used
   # as goimports' `-local` prefix so the repo's own packages group last.
@@ -125,6 +134,10 @@ in
   #   suite that can't run in the sandbox.
   # goTags: build tags, e.g. [ "e2e" ]. name: override the derivation name.
   # testFlags: extra `go test` flags, e.g. [ "-timeout=60m" ].
+  # testWrapper: command the test runs under, e.g. "xvfb-run" for browser suites.
+  # retries: rerun a failing suite up to N times; for flaky integration/browser
+  #   suites on shared builders (pair with -failfast in testFlags to keep a
+  #   flaky attempt cheap). A real failure fails every attempt.
   goTest =
     { goSkip ? [ ]
     , goRace ? false
@@ -134,6 +147,8 @@ in
     , testExclude ? [ ]
     , goTags ? [ ]
     , testFlags ? [ ]
+    , testWrapper ? ""
+    , retries ? 1
     , name ? null
     , ...
     }@args:
@@ -149,16 +164,34 @@ in
         if testExclude == [ ]
         then testPackages
         else "$(go list ${testPackages} | grep -vE '${c.lib.concatStringsSep "|" testExclude}')";
+      wrapper = c.lib.optionalString (testWrapper != "") "${testWrapper} ";
+      testCmd = "${wrapper}go test ${raceFlag} ${tagsFlag} ${flagsStr} ${skipFlag} ${pkgList}";
     in
     c.pkgs.stdenv.mkDerivation {
       name = if name != null then name else "${c.pname}-gotest";
       src = c.goSrc;
-      nativeBuildInputs = [ c.goPkg ] ++ nativeCheckInputs;
+      nativeBuildInputs = [ c.goPkg ]
+        ++ c.lib.optional (c.goCache != null) c.goCache
+        ++ nativeCheckInputs;
       buildPhase = ''
         ${c.goEnv}
         ${testEnv}
-        go test ${raceFlag} ${tagsFlag} ${flagsStr} ${skipFlag} ${pkgList}
-      '';
+      '' + (if retries == 1 then ''
+        ${testCmd}
+      '' else ''
+        ok=
+        for attempt in $(seq 1 ${toString retries}); do
+          echo "go test attempt $attempt/${toString retries}"
+          if ${testCmd}; then
+            ok=1
+            break
+          fi
+        done
+        [ -n "$ok" ] || {
+          echo "go test failed after ${toString retries} attempts" >&2
+          exit 1
+        }
+      '');
       installPhase = "touch $out";
     };
 
@@ -173,11 +206,50 @@ in
     c.pkgs.stdenv.mkDerivation {
       name = "${c.pname}-golangci-lint";
       src = c.goSrc;
-      nativeBuildInputs = [ c.goPkg gcl ];
+      nativeBuildInputs = [ c.goPkg gcl ]
+        ++ c.lib.optional (c.goCache != null) c.goCache;
       buildPhase = ''
         ${c.goEnv}
         export GOLANGCI_LINT_CACHE=$TMPDIR/golangci
         golangci-lint run ./...
+      '';
+      installPhase = "touch $out";
+    };
+
+  # `go generate` drift check: regenerate in the sandbox and fail if the
+  # committed output differs. generateCommand: override the generate invocation
+  # (e.g. to exclude packages that need the network). preGen/postGen: shell run
+  # before/after generation — stage inputs the generators need (node_modules,
+  # …) in preGen and remove them again in postGen so they don't show up in the
+  # drift diff. The src must carry every file the generators read *and* every
+  # generated file (use extraSrc); a missing input fails loudly here.
+  goGenerate =
+    { generateCommand ? "go generate ./..."
+    , nativeCheckInputs ? [ ]
+    , preGen ? ""
+    , postGen ? ""
+    , name ? null
+    , ...
+    }@args:
+    let
+      c = mkCtx args;
+    in
+    c.pkgs.stdenv.mkDerivation {
+      name = if name != null then name else "${c.pname}-gogenerate";
+      src = c.goSrc;
+      nativeBuildInputs = [ c.goPkg ]
+        ++ c.lib.optional (c.goCache != null) c.goCache
+        ++ nativeCheckInputs;
+      buildPhase = ''
+        ${c.goEnv}
+        cp -R . "$TMPDIR/pristine"
+        ${preGen}
+        ${generateCommand}
+        ${postGen}
+        if ! diff -ru --no-dereference "$TMPDIR/pristine" .; then
+          echo "ERROR: go generate produced changes — regenerate and commit." >&2
+          exit 1
+        fi
       '';
       installPhase = "touch $out";
     };
