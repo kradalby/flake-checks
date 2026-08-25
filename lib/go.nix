@@ -112,22 +112,42 @@ let
     if ml == null then null else pkgs.lib.elemAt (pkgs.lib.splitString " " ml) 1;
 
   # goFmt picks the Go formatter: "gofumpt" (default), "gofmt", or "off"
-  # (nix-only; let golangci-lint enforce Go formatting). prettier adds
-  # web/doc formatting (md, yaml, ts, css, …) for repos that ship those.
+  # (nix-only; let golangci-lint enforce Go formatting). nixFmt picks the Nix
+  # formatter: "nixpkgs-fmt" (default), "nixfmt" (RFC 166), or "off". prettier
+  # adds web/doc formatting (md, yaml, ts, css, …) for repos that ship those.
   # localPrefix (the go module path) makes goimports group local imports last.
-  treefmtFor = pkgs: goFmt: prettier: localPrefix: treefmt-nix.lib.evalModule pkgs {
-    projectRootFile = "go.mod";
-    programs = {
-      gofumpt.enable = goFmt == "gofumpt";
-      gofmt.enable = goFmt == "gofmt";
-      goimports.enable = goFmt != "off";
-      nixpkgs-fmt.enable = true;
-      prettier.enable = prettier;
-    };
-    settings.formatter = pkgs.lib.optionalAttrs (goFmt != "off" && localPrefix != null) {
-      goimports.options = [ "-w" "-local" localPrefix ];
-    };
-  };
+  #
+  # treefmtExtra is recursively merged *over* this base module, so a repo can
+  # bolt on formatters this lib knows nothing about (programs.elm-format.enable)
+  # and replace a setting the base picked (settings.formatter.<f>.options).
+  # recursiveUpdate rather than a second module: within one module a leaf can be
+  # replaced outright, whereas the module system would either concatenate
+  # (list-typed options) or fail on conflicting definitions. Overriding what
+  # treefmt-nix's *own* program modules define still needs lib.mkForce there.
+  treefmtFor =
+    pkgs:
+    { goFmt ? "gofumpt"
+    , nixFmt ? "nixpkgs-fmt"
+    , prettier ? false
+    , localPrefix ? null
+    , treefmtExtra ? { }
+    }:
+    treefmt-nix.lib.evalModule pkgs (pkgs.lib.recursiveUpdate
+      {
+        projectRootFile = "go.mod";
+        programs = {
+          gofumpt.enable = goFmt == "gofumpt";
+          gofmt.enable = goFmt == "gofmt";
+          goimports.enable = goFmt != "off";
+          nixfmt.enable = nixFmt == "nixfmt";
+          nixpkgs-fmt.enable = nixFmt == "nixpkgs-fmt";
+          prettier.enable = prettier;
+        };
+        settings.formatter = pkgs.lib.optionalAttrs (goFmt != "off" && localPrefix != null) {
+          goimports.options = [ "-w" "-local" localPrefix ];
+        };
+      }
+      treefmtExtra);
 
   # Default extensions prettier owns; the goFormat fileset opts these in when
   # enabled. Override per-repo via `prettierExts` (e.g. drop json for repos with
@@ -267,14 +287,24 @@ in
 
   # fmtExclude: dirs/files to skip (generated code, vendored deploy configs, …).
   # prettier: also format web/doc files (md, yaml, ts, css, …) via prettier.
+  # fmtExts: extra extensions to pull into the check's source, for formatters
+  #   wired up through treefmtExtra, e.g. [ "elm" ] with programs.elm-format.
+  #   Without this the files are not in src at all, so no `programs` setting can
+  #   reach them and the check silently formats nothing.
+  # fmtInclude: extra paths for files an extension cannot name (extensionless
+  #   scripts, dotfiles a formatter reads), e.g. [ (root + "/Makefile") ].
   goFormat =
     { pkgs
     , root
     , fmtExclude ? [ ]
+    , fmtExts ? [ ]
+    , fmtInclude ? [ ]
     , goFmt ? "gofumpt"
+    , nixFmt ? "nixpkgs-fmt"
     , prettier ? false
     , prettierExts ? defaultPrettierExts
     , goImportsLocal ? goModuleOf pkgs root
+    , treefmtExtra ? { }
     , ...
     }:
     let
@@ -284,6 +314,7 @@ in
       # config must be in the source tree or the check disagrees with local runs.
       prettierConfig = map (f: fs.maybeMissing (root + "/${f}")) [
         ".editorconfig"
+        ".prettierignore"
         ".prettierrc"
         ".prettierrc.json"
         ".prettierrc.yaml"
@@ -296,7 +327,9 @@ in
         (root + "/go.mod")
         (fs.fileFilter (f: f.hasExt "go") root)
         (fs.fileFilter (f: f.hasExt "nix") root)
-      ] ++ lib.optionals prettier
+      ] ++ lib.optional (fmtExts != [ ]) (fs.fileFilter (f: lib.any f.hasExt fmtExts) root)
+      ++ map fs.maybeMissing fmtInclude
+      ++ lib.optionals prettier
         ([ (fs.fileFilter (f: lib.any f.hasExt prettierExts) root) ] ++ prettierConfig));
       fileset =
         if fmtExclude == [ ]
@@ -304,8 +337,24 @@ in
         else fs.difference base (fs.unions (map fs.maybeMissing fmtExclude));
       fmtSrc = fs.toSource { inherit root; inherit fileset; };
     in
-    (treefmtFor pkgs goFmt prettier goImportsLocal).config.build.check fmtSrc;
+    (treefmtFor pkgs {
+      inherit goFmt nixFmt prettier treefmtExtra;
+      localPrefix = goImportsLocal;
+    }).config.build.check fmtSrc;
 
-  formatter = { pkgs, root, goFmt ? "gofumpt", prettier ? false, goImportsLocal ? goModuleOf pkgs root, ... }:
-    (treefmtFor pkgs goFmt prettier goImportsLocal).config.build.wrapper;
+  # Same treefmt module as goFormat, so `nix fmt` and the check cannot disagree.
+  formatter =
+    { pkgs
+    , root
+    , goFmt ? "gofumpt"
+    , nixFmt ? "nixpkgs-fmt"
+    , prettier ? false
+    , goImportsLocal ? goModuleOf pkgs root
+    , treefmtExtra ? { }
+    , ...
+    }:
+    (treefmtFor pkgs {
+      inherit goFmt nixFmt prettier treefmtExtra;
+      localPrefix = goImportsLocal;
+    }).config.build.wrapper;
 }
