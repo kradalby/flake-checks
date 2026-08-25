@@ -49,7 +49,7 @@ your flake's `checks` so `nix build .#checks.<system>.<name>` is the CI gate.
 | `goTest common`      | `go test ./...` check           | `goRace = true` adds `-race` (CGO); `goSkip = [ "Pat" ]`; `testWrapper = "xvfb-run"`; `retries = 3` for flaky suites |
 | `goLint common`      | `golangci-lint run ./...` check | full tree                                                               |
 | `goGenerate common`  | `go generate` drift check       | regenerates in the sandbox, fails on diff; `generateCommand`, `preGen`/`postGen` |
-| `goFormat common`    | treefmt check                   | gofumpt + goimports + nixpkgs-fmt; `prettier = true` adds web/doc files |
+| `goFormat common`    | treefmt check                   | gofumpt + goimports + nixfmt; `prettier = true` adds web/doc files      |
 | `formatter common`   | `nix fmt` wrapper               | the flake's `formatter` output                                          |
 
 `common` keys: `pkgs`, `root`, `pname`, `vendorHash` (required); `version`, `goPkg`,
@@ -73,7 +73,12 @@ generated dirs).
 `goFormat` and `formatter` share one treefmt module, so `nix fmt` and the check can
 never disagree. `goFmt` selects the Go formatter — `"gofumpt"` (default), `"gofmt"`,
 or `"off"` (Nix only; let golangci-lint enforce Go formatting). `nixFmt` selects the
-Nix formatter — `"nixpkgs-fmt"` (default), `"nixfmt"` ([RFC 166]), or `"off"`.
+Nix formatter — `"nixfmt"` (default, [RFC 166]), `"nixpkgs-fmt"`, or `"off"`.
+
+> **The Nix default changed** from `nixpkgs-fmt` to `nixfmt`. Repos pin this flake in
+> their `flake.lock`, so nothing moves until `nix flake update`; when it does, `.nix`
+> files need reformatting (`nix fmt`) or the `formatting` check goes red. Set
+> `nixFmt = "nixpkgs-fmt"` to stay on the old formatter.
 
 `treefmtExtra` is the escape hatch for anything the knobs above do not cover: an
 attrset [recursively merged][recursiveUpdate] *over* the base treefmt module, so it can

@@ -113,7 +113,7 @@ let
 
   # goFmt picks the Go formatter: "gofumpt" (default), "gofmt", or "off"
   # (nix-only; let golangci-lint enforce Go formatting). nixFmt picks the Nix
-  # formatter: "nixpkgs-fmt" (default), "nixfmt" (RFC 166), or "off". prettier
+  # formatter: "nixfmt" (default, RFC 166), "nixpkgs-fmt", or "off". prettier
   # adds web/doc formatting (md, yaml, ts, css, …) for repos that ship those.
   # localPrefix (the go module path) makes goimports group local imports last.
   #
@@ -127,7 +127,7 @@ let
   treefmtFor =
     pkgs:
     { goFmt ? "gofumpt"
-    , nixFmt ? "nixpkgs-fmt"
+    , nixFmt ? "nixfmt"
     , prettier ? false
     , localPrefix ? null
     , treefmtExtra ? { }
@@ -300,7 +300,7 @@ in
     , fmtExts ? [ ]
     , fmtInclude ? [ ]
     , goFmt ? "gofumpt"
-    , nixFmt ? "nixpkgs-fmt"
+    , nixFmt ? "nixfmt"
     , prettier ? false
     , prettierExts ? defaultPrettierExts
     , goImportsLocal ? goModuleOf pkgs root
@@ -347,7 +347,7 @@ in
     { pkgs
     , root
     , goFmt ? "gofumpt"
-    , nixFmt ? "nixpkgs-fmt"
+    , nixFmt ? "nixfmt"
     , prettier ? false
     , goImportsLocal ? goModuleOf pkgs root
     , treefmtExtra ? { }
