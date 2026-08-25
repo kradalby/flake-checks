@@ -30,6 +30,18 @@
           vendorHash = null;
           goPkg = pkgs.go_1_26; # pin latest Go, also dogfoods the goPkg knob
           prettier = true; # dogfood web/doc formatting (examples/minimal/README.md)
+          # Dogfood the formatter escape hatches: shfmt is not a program this
+          # lib enables, and "sh" is not an extension it collects, so
+          # examples/minimal/hello.sh is only reached if both knobs work.
+          fmtExts = [ "sh" ];
+          treefmtExtra = {
+            programs.shfmt.enable = true;
+            # prettier 3.8 reads .editorconfig and walks *past* the project
+            # root to find one, so a developer's ~/.editorconfig restyles the
+            # tree locally while the sandboxed check — which has no home dir —
+            # disagrees. Pin it off so both see the same rules.
+            settings.formatter.prettier.options = [ "--no-editorconfig" ];
+          };
         };
       in
       {
