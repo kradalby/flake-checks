@@ -54,8 +54,9 @@ your flake's `checks` so `nix build .#checks.<system>.<name>` is the CI gate.
 
 `common` keys: `pkgs`, `root`, `pname`, `vendorHash` (required); `version`, `goPkg`,
 `embedDirs` (extra `//go:embed` dirs), `extraSrc`, `excludeSrc`, `goSkip`, `goRace`,
-`goTags`, `proxyVendor`, `goCache`, `prettier`, `fmtExclude` (optional). Each function
-takes `...` and ignores keys it doesn't use, so one `common` set drives them all.
+`goTags`, `proxyVendor`, `goCache`, `prettier`, `fmtExclude`, `fmtExts`, `fmtInclude`,
+`goFmt`, `nixFmt`, `treefmtExtra` (optional). Each function takes `...` and ignores keys
+it doesn't use, so one `common` set drives them all.
 
 `goCache` accepts a derivation whose setup hook seeds `$TMPDIR/go-cache` with
 precompiled dependencies (e.g. [numtide/build-go-cache](https://github.com/numtide/build-go-cache));
@@ -66,6 +67,50 @@ consumer or every lookup misses.
 `prettier = true` formats md/yaml/ts/js/css/scss/sass/html/json through prettier in
 addition to the Go/Nix formatters (off by default; `fmtExclude` drops paths, e.g.
 generated dirs).
+
+## Formatting
+
+`goFormat` and `formatter` share one treefmt module, so `nix fmt` and the check can
+never disagree. `goFmt` selects the Go formatter — `"gofumpt"` (default), `"gofmt"`,
+or `"off"` (Nix only; let golangci-lint enforce Go formatting). `nixFmt` selects the
+Nix formatter — `"nixpkgs-fmt"` (default), `"nixfmt"` ([RFC 166]), or `"off"`.
+
+`treefmtExtra` is the escape hatch for anything the knobs above do not cover: an
+attrset [recursively merged][recursiveUpdate] *over* the base treefmt module, so it can
+enable formatters this lib knows nothing about and replace settings the base picked.
+
+```nix
+common = {
+  # …
+  prettier = true;
+  fmtExts = [ "elm" ];            # widen the check's source beyond go/nix/prettier
+  treefmtExtra = {
+    programs.elm-format.enable = true;
+    settings.formatter.prettier.options = [ "--no-editorconfig" ];
+  };
+};
+```
+
+`fmtExts` matters because `goFormat`'s source is fileset-filtered: a file that is not
+in the source cannot be formatted, no matter which `programs` are enabled — the check
+would pass while formatting nothing. `fmtInclude` does the same for paths an extension
+cannot name (extensionless scripts, a `Makefile`, a dotfile a formatter reads).
+
+Leaf values in `treefmtExtra` win over the base module. Overriding what treefmt-nix's
+*own* program modules define (e.g. list-typed `options`, which the module system
+concatenates) needs `lib.mkForce` in `treefmtExtra`.
+
+Prettier reads `.editorconfig`, `.prettierignore` and `.prettierrc*` from the source
+tree, so `goFormat` includes them when `prettier = true`. Prettier also walks *past*
+the project root looking for `.editorconfig`: a repo without one picks up the
+developer's `~/.editorconfig` locally while the sandboxed check (no home directory)
+does not, and the two disagree. `settings.formatter.prettier.options =
+[ "--no-editorconfig" ]` in `treefmtExtra` closes that gap.
+
+[RFC 166]: https://github.com/NixOS/rfcs/pull/166
+[recursiveUpdate]: https://nixos.org/manual/nixpkgs/stable/#function-library-lib.attrsets.recursiveUpdate
+
+## Other options
 
 `proxyVendor = true` fetches deps via the module proxy (`go mod download`) instead
 of `go mod vendor`, so build-tag-only deps (e.g. a `//go:build e2e` import) resolve
