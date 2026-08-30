@@ -86,6 +86,10 @@ let
       goEnv = ''
         export HOME=$TMPDIR
         export GOCACHE=$TMPDIR/go-cache
+        # go's -p and -parallel both default to GOMAXPROCS, i.e. every visible
+        # CPU. buildGoModule passes -p $NIX_BUILD_CORES; these hand-rolled
+        # derivations must opt in or they oversubscribe a shared builder.
+        export GOMAXPROCS=''${NIX_BUILD_CORES:-1}
       '' + (if vendorHash == null then ''
         export GOFLAGS=-mod=mod
         export GOPROXY=off
