@@ -28,7 +28,7 @@
           root = ./examples/minimal;
           pname = "example";
           vendorHash = null;
-          goPkg = pkgs.go_1_26; # pin latest Go, also dogfoods the goPkg knob
+          goPkg = pkgs.go_1_27; # pin latest Go, also dogfoods the goPkg knob
           prettier = true; # dogfood web/doc formatting (examples/minimal/README.md)
           # Dogfood the formatter escape hatches: shfmt is not a program this
           # lib enables, and "sh" is not an extension it collects, so
@@ -48,7 +48,7 @@
         packages.default = fc.goBuild common;
         formatter = fc.formatter common;
         devShells.default = pkgs.mkShell {
-          packages = [ pkgs.go_1_26 pkgs.gopls pkgs.golangci-lint pkgs.gofumpt pkgs.prek pkgs.gnumake ];
+          packages = [ pkgs.go_1_27 pkgs.gopls pkgs.golangci-lint pkgs.gofumpt pkgs.prek pkgs.gnumake ];
         };
         checks = {
           build = fc.goBuild common;

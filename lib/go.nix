@@ -11,7 +11,7 @@
 # and ignores keys it doesn't use:
 #
 #   common = { inherit pkgs; root = ./.; pname = "app";
-#              vendorHash = "sha256-…"; goPkg = pkgs.go_1_26; };
+#              vendorHash = "sha256-…"; goPkg = pkgs.go_1_27; };
 #
 # Each check's src is fileset-filtered to only its inputs, so unrelated edits
 # hit the binary cache instead of rebuilding. Tests/lint run fully offline:

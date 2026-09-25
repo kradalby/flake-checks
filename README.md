@@ -25,7 +25,7 @@ your flake's `checks` so `nix build .#checks.<system>.<name>` is the CI gate.
           pname = "myapp";
           version = "0.1.0";
           vendorHash = "sha256-…"; # null if dep-free or vendored in-tree
-          goPkg = pkgs.go_1_26;    # optional, defaults to pkgs.go
+          goPkg = pkgs.go_1_27;    # optional, defaults to pkgs.go
         };
       in
       {
