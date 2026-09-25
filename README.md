@@ -15,7 +15,8 @@ your flake's `checks` so `nix build .#checks.<system>.<name>` is the CI gate.
   };
 
   outputs = { self, nixpkgs, flake-utils, flake-checks, ... }:
-    flake-utils.lib.eachDefaultSystem (system:
+    # not eachDefaultSystem: nixpkgs 26.11 dropped x86_64-darwin
+    flake-utils.lib.eachSystem [ "x86_64-linux" "aarch64-linux" "aarch64-darwin" ] (system:
       let
         pkgs = nixpkgs.legacyPackages.${system};
         fc = flake-checks.lib;
