@@ -74,6 +74,8 @@ generated dirs).
 never disagree. `goFmt` selects the Go formatter — `"gofumpt"` (default), `"gofmt"`,
 or `"off"` (Nix only; let golangci-lint enforce Go formatting). `nixFmt` selects the
 Nix formatter — `"nixfmt"` (default, [RFC 166]), `"nixpkgs-fmt"`, or `"off"`.
+`gofmt` and `goimports` run with `goPkg`, so a `go.mod` newer than nixpkgs' default
+Go formats offline instead of failing to fetch a toolchain.
 
 > **The Nix default changed** from `nixpkgs-fmt` to `nixfmt`. Repos pin this flake in
 > their `flake.lock`, so nothing moves until `nix flake update`; when it does, `.nix`

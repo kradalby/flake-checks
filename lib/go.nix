@@ -120,6 +120,8 @@ let
   # formatter: "nixfmt" (default, RFC 166), "nixpkgs-fmt", or "off". prettier
   # adds web/doc formatting (md, yaml, ts, css, …) for repos that ship those.
   # localPrefix (the go module path) makes goimports group local imports last.
+  # goPkg is the repo's Go: gofmt and goimports must be at least as new as the
+  # go.mod `go` line, or they cannot parse the code / try to fetch a toolchain.
   #
   # treefmtExtra is recursively merged *over* this base module, so a repo can
   # bolt on formatters this lib knows nothing about (programs.elm-format.enable)
@@ -134,15 +136,24 @@ let
     , nixFmt ? "nixfmt"
     , prettier ? false
     , localPrefix ? null
+    , goPkg ? pkgs.go
     , treefmtExtra ? { }
     }:
+    let
+      # goimports shells out to `go`, and gotools only *appends* nixpkgs'
+      # default go to PATH. Prepend goPkg instead of overriding gotools' go,
+      # which would rebuild gotools for every repo that pins a newer Go.
+      goimports = pkgs.writeShellScriptBin "goimports" ''
+        PATH=${goPkg}/bin''${PATH:+:$PATH} exec ${pkgs.gotools}/bin/goimports "$@"
+      '';
+    in
     treefmt-nix.lib.evalModule pkgs (pkgs.lib.recursiveUpdate
       {
         projectRootFile = "go.mod";
         programs = {
           gofumpt.enable = goFmt == "gofumpt";
-          gofmt.enable = goFmt == "gofmt";
-          goimports.enable = goFmt != "off";
+          gofmt = { enable = goFmt == "gofmt"; package = goPkg; };
+          goimports = { enable = goFmt != "off"; package = goimports; };
           nixfmt.enable = nixFmt == "nixfmt";
           nixpkgs-fmt.enable = nixFmt == "nixpkgs-fmt";
           prettier.enable = prettier;
@@ -308,6 +319,7 @@ in
     , prettier ? false
     , prettierExts ? defaultPrettierExts
     , goImportsLocal ? goModuleOf pkgs root
+    , goPkg ? pkgs.go
     , treefmtExtra ? { }
     , ...
     }:
@@ -342,7 +354,7 @@ in
       fmtSrc = fs.toSource { inherit root; inherit fileset; };
     in
     (treefmtFor pkgs {
-      inherit goFmt nixFmt prettier treefmtExtra;
+      inherit goFmt nixFmt prettier goPkg treefmtExtra;
       localPrefix = goImportsLocal;
     }).config.build.check fmtSrc;
 
@@ -354,11 +366,12 @@ in
     , nixFmt ? "nixfmt"
     , prettier ? false
     , goImportsLocal ? goModuleOf pkgs root
+    , goPkg ? pkgs.go
     , treefmtExtra ? { }
     , ...
     }:
     (treefmtFor pkgs {
-      inherit goFmt nixFmt prettier treefmtExtra;
+      inherit goFmt nixFmt prettier goPkg treefmtExtra;
       localPrefix = goImportsLocal;
     }).config.build.wrapper;
 }
